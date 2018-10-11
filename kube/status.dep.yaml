@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
       - name: server
-        image: index.docker.io/mateuszdyminski/k8s-status:799ff86
+        image: index.docker.io/mateuszdyminski/k8s-status:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mateuszdyminski/k8s-status/pkg/config"
+	"github.com/rs/zerolog/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kube "k8s.io/client-go/kubernetes"
 )
@@ -42,31 +42,25 @@ func NodesStatusHealth(config KubeConfig, nodesReadyThreshold int) Checker {
 	return NewNodesStatusChecker(config, nodesReadyThreshold)
 }
 
-// EtcdHealth creates a checker that checks health of etcd
-func EtcdHealth(cfg *config.ETCDConfig) (Checker, error) {
-	const name = "etcd-healthz"
-
-	transport, err := cfg.NewHTTPTransport()
-	if err != nil {
-		return nil, err
+// KubeEtcdHealth creates a checker that checks health of etcd
+func KubeEtcdHealth(config KubeConfig) Checker {
+	checker := &healthzChecker{}
+	kubeChecker := &KubeChecker{
+		name:    "etcd",
+		checker: checker.testHealthz,
+		client:  config.Client,
 	}
-	createChecker := func(addr string) (Checker, error) {
-		endpoint := fmt.Sprintf("%v/health", addr)
-		return NewHTTPHealthzCheckerWithTransport(name, endpoint, transport, config.EtcdChecker), nil
-	}
-	var checkers []Checker
-	for _, endpoint := range cfg.Endpoints {
-		checker, err := createChecker(endpoint)
-		if err != nil {
-			return nil, err
-		}
-		checkers = append(checkers, checker)
-	}
-	return &compositeChecker{name, checkers}, nil
+	checker.KubeChecker = kubeChecker
+	return kubeChecker
 }
 
-func (_ noopChecker) Name() string                    { return "noop" }
-func (_ noopChecker) Check(context.Context, Reporter) {}
+// testHealthz executes a test by using k8s API
+func (h *healthzChecker) testEtcdHealthz(ctx context.Context, client *kube.Clientset) error {
+	res, err := client.CoreV1().ComponentStatuses().List(metav1.ListOptions{Limit: 100})
 
-// noopChecker is a checker that does nothing
-type noopChecker struct{}
+	for _, item := range res.Items {
+		log.Info().Msgf("%+v", item)
+	}
+
+	return err
+}

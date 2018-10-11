@@ -32,13 +32,8 @@ func NewRunnerWithCfg(cfg *config.Config) (*Runner, error) {
 
 	kubeConfig := KubeConfig{Client: clientset}
 
-	// etcdChecker, err := EtcdHealth(&cfg.ETCDConfig)
-	// if err != nil {
-	// 	return nil, err
-	// }
-
 	runner := &Runner{}
-	// runner.AddChecker(etcdChecker)
+	runner.AddChecker(KubeEtcdHealth(kubeConfig))
 	runner.AddChecker(KubeAPIServerHealth(kubeConfig))
 	runner.AddChecker(NodesStatusHealth(kubeConfig, cfg.KubeNodesReadyThreshold))
 	return runner, nil

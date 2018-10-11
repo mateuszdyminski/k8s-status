@@ -5,7 +5,6 @@ RUN mkdir -p /usr/share/k8status
 WORKDIR /usr/share/k8status
 
 ADD build/k8status .
-ADD config .
 
 ENV K8STATUS_HTTPPORT=8080 
 ENV K8STATUS_GRACEFULSHUTDOWNTIMEOUT=5 

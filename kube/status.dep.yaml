@@ -1,0 +1,29 @@
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: k8s-status
+  namespace: ava
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: k8s-status
+      annotations:
+        prometheus.io/scrape: 'true'
+    spec:
+      containers:
+      - name: server
+        image: index.docker.io/mateuszdyminski/k8s-status:799ff86
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "256Mi"
+            cpu: "100m"

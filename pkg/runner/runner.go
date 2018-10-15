@@ -14,6 +14,7 @@ import (
 // and run them
 type Runner struct {
 	Checkers
+	cfg *config.Config
 }
 
 // NewRunner creates Runner with checks configured using provided options
@@ -32,9 +33,11 @@ func NewRunnerWithCfg(cfg *config.Config) (*Runner, error) {
 
 	kubeConfig := KubeConfig{Client: clientset}
 
-	runner := &Runner{}
+	runner := &Runner{cfg: cfg}
+	runner.AddChecker(KubeClusterConfig(kubeConfig, cfg))
 	runner.AddChecker(KubeEtcdHealth(kubeConfig))
-	runner.AddChecker(KubeAPIServerHealth(kubeConfig))
+	runner.AddChecker(KubeSchedulerHealth(kubeConfig))
+	runner.AddChecker(KubeControllerManagerHealth(kubeConfig))
 	runner.AddChecker(NodesStatusHealth(kubeConfig, cfg.KubeNodesReadyThreshold))
 	return runner, nil
 }
@@ -48,27 +51,39 @@ func (c *Runner) Run(ctx context.Context) *FinalProbe {
 		c.Check(ctx, &probes)
 	}
 
-	return finalHealth(probes)
+	return c.finalHealth(probes)
 }
 
 // finalHealth aggregates statuses from all probes into one summarized health status
-func finalHealth(probes Probes) *FinalProbe {
-	var errors []string
+func (c *Runner) finalHealth(probes Probes) *FinalProbe {
+	var errors []SingleFinalProbe
+	var oks []SingleFinalProbe
+	var config SingleFinalProbe
 	status := ProbeRunning
 
 	for _, probe := range probes {
 		switch probe.Status {
 		case ProbeRunning:
-			errors = append(errors, fmt.Sprintf("Check %s: OK", probe.Checker))
+			if probe.Checker == c.cfg.ConfigCheckerConfigName {
+				config = SingleFinalProbe{Description: fmt.Sprintf("Check %s: OK", probe.Checker), Data: probe.CheckerData}
+			} else {
+				oks = append(oks, SingleFinalProbe{Description: fmt.Sprintf("Check %s: OK", probe.Checker), Data: probe.CheckerData})
+			}
 		default:
 			status = ProbeFailed
-			errors = append(errors, fmt.Sprintf("Check %s: %s", probe.Checker, probe.Error))
+			if probe.Checker == c.cfg.ConfigCheckerConfigName {
+				config = SingleFinalProbe{Description: fmt.Sprintf("Check %s: %s", probe.Checker, probe.Error), Data: probe.CheckerData}
+			} else {
+				errors = append(errors, SingleFinalProbe{Description: fmt.Sprintf("Check %s: %s", probe.Checker, probe.Error), Data: probe.CheckerData})
+			}
 		}
 	}
 
 	clusterHealth := FinalProbe{
 		Status: status,
+		Config: config,
 		Errors: errors,
+		Oks:    oks,
 	}
 
 	log.Info().Msgf("cluster new health: %#v", clusterHealth)

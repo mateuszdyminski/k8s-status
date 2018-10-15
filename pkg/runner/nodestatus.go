@@ -42,8 +42,10 @@ func (r *nodesStatusChecker) Check(ctx context.Context, reporter Reporter) {
 		return
 	}
 	var nodesReady int
+	conditions := make([]interface{}, 0, 0)
 	for _, item := range statuses.Items {
 		for _, condition := range item.Status.Conditions {
+			conditions = append(conditions, condition)
 			if condition.Type != v1.NodeReady {
 				continue
 			}
@@ -60,11 +62,13 @@ func (r *nodesStatusChecker) Check(ctx context.Context, reporter Reporter) {
 			Status:  ProbeFailed,
 			Error: fmt.Sprintf("Not enough ready nodes: %v (threshold %v)",
 				nodesReady, r.nodesReadyThreshold),
+			CheckerData: conditions,
 		})
 	} else {
 		reporter.Add(&Probe{
-			Checker: r.Name(),
-			Status:  ProbeRunning,
+			Checker:     r.Name(),
+			Status:      ProbeRunning,
+			CheckerData: conditions,
 		})
 	}
 }

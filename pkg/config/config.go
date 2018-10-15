@@ -9,9 +9,12 @@ type Config struct {
 	GracefulShutdownExtraSleep int
 	Debug                      bool
 
-	KubeconfigPath          string
+	// Kubernetes nodes config
 	KubeNodesReadyThreshold int
-	ETCDConfig              ETCDConfig
+
+	// Config checker
+	ConfigCheckerNamespace  string
+	ConfigCheckerConfigName string
 }
 
 // LoadConfig loads config from env vars.

@@ -3,8 +3,10 @@ package runner
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"github.com/rs/zerolog/log"
+	"github.com/mateuszdyminski/k8s-status/pkg/config"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kube "k8s.io/client-go/kubernetes"
 )
@@ -14,27 +16,24 @@ type healthzChecker struct {
 	*KubeChecker
 }
 
-// KubeAPIServerHealth creates a checker for the kubernetes API server
-func KubeAPIServerHealth(config KubeConfig) Checker {
-	checker := &healthzChecker{}
-	kubeChecker := &KubeChecker{
-		name:    "kube-apiserver",
-		checker: checker.testHealthz,
-		client:  config.Client,
-	}
-	checker.KubeChecker = kubeChecker
-	return kubeChecker
+// KubeClusterConfig creates a checker that checks health of etcd
+func KubeClusterConfig(config KubeConfig, cfg *config.Config) Checker {
+	return clusterConfig(config, cfg)
 }
 
-// testHealthz executes a test by using k8s API
-func (h *healthzChecker) testHealthz(ctx context.Context, client *kube.Clientset) error {
-	_, err := client.CoreV1().ComponentStatuses().Get("scheduler", metav1.GetOptions{})
-	return err
+// KubeEtcdHealth creates a checker that checks health of etcd
+func KubeEtcdHealth(config KubeConfig) Checker {
+	return componentServerHealth(config, "etcd")
 }
 
-// KubeletHealth creates a checker for the kubernetes kubelet component
-func KubeletHealth(addr string) Checker {
-	return NewHTTPHealthzChecker("kubelet", fmt.Sprintf("%v/healthz", addr), kubeHealthz)
+// KubeSchedulerHealth creates a checker that checks health of scheduler
+func KubeSchedulerHealth(config KubeConfig) Checker {
+	return componentServerHealth(config, "scheduler")
+}
+
+// KubeControllerManagerHealth creates a checker that checks health of controller manager
+func KubeControllerManagerHealth(config KubeConfig) Checker {
+	return componentServerHealth(config, "controller-manager")
 }
 
 // NodesStatusHealth creates a checker that reports a number of ready kubernetes nodes
@@ -42,12 +41,12 @@ func NodesStatusHealth(config KubeConfig, nodesReadyThreshold int) Checker {
 	return NewNodesStatusChecker(config, nodesReadyThreshold)
 }
 
-// KubeEtcdHealth creates a checker that checks health of etcd
-func KubeEtcdHealth(config KubeConfig) Checker {
+// KubeAPIServerHealth creates a checker for the kubernetes API server
+func componentServerHealth(config KubeConfig, componentName string) Checker {
 	checker := &healthzChecker{}
 	kubeChecker := &KubeChecker{
-		name:    "etcd",
-		checker: checker.testHealthz,
+		name:    componentName,
+		checker: checker.testHealthz(componentName),
 		client:  config.Client,
 	}
 	checker.KubeChecker = kubeChecker
@@ -55,12 +54,66 @@ func KubeEtcdHealth(config KubeConfig) Checker {
 }
 
 // testHealthz executes a test by using k8s API
-func (h *healthzChecker) testEtcdHealthz(ctx context.Context, client *kube.Clientset) error {
-	res, err := client.CoreV1().ComponentStatuses().List(metav1.ListOptions{Limit: 100})
+func (h *healthzChecker) testHealthz(componentName string) KubeStatusChecker {
+	return h.testComponentHeathz(componentName)
+}
 
-	for _, item := range res.Items {
-		log.Info().Msgf("%+v", item)
+func clusterConfig(kubeConfig KubeConfig, cfg *config.Config) Checker {
+	checker := &healthzChecker{}
+	kubeChecker := &KubeChecker{
+		name:    cfg.ConfigCheckerConfigName,
+		checker: checker.clusterConfig(cfg),
+		client:  kubeConfig.Client,
 	}
+	checker.KubeChecker = kubeChecker
+	return kubeChecker
+}
 
-	return err
+func (h *healthzChecker) clusterConfig(cfg *config.Config) KubeStatusChecker {
+	return func(ctx context.Context, client *kube.Clientset) (interface{}, error) {
+		res, err := client.CoreV1().ConfigMaps(cfg.ConfigCheckerNamespace).Get(cfg.ConfigCheckerConfigName, metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+
+		return res.Data, nil
+	}
+}
+
+// testHealthz executes a test by using k8s API
+func (h *healthzChecker) testComponentHeathz(componentName string) KubeStatusChecker {
+	return func(ctx context.Context, client *kube.Clientset) (interface{}, error) {
+		res, err := client.CoreV1().ComponentStatuses().List(metav1.ListOptions{LabelSelector: fmt.Sprintf("component=%s", componentName), Limit: 100})
+		if err != nil {
+			return nil, err
+		}
+
+		healthy := true
+		conditions := make([]interface{}, 0, 0)
+		for _, item := range res.Items {
+			if strings.Contains(item.GetName(), componentName) {
+				for _, condition := range item.Conditions {
+					conditions = append(conditions, condition)
+					if condition.Type != v1.ComponentHealthy {
+						healthy = false
+						continue
+					}
+					if condition.Status != v1.ConditionTrue {
+						healthy = false
+						continue
+					}
+				}
+			}
+		}
+
+		if len(conditions) == 0 {
+			return nil, fmt.Errorf("no component: %s found on Kubernetes cluster", componentName)
+		}
+
+		if !healthy {
+			return nil, fmt.Errorf("component: %s is not healthy", componentName)
+		}
+
+		return conditions, nil
+	}
 }

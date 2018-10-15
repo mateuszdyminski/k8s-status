@@ -43,7 +43,7 @@ type Probe struct {
 	// Error is the probe-specific error message
 	Error string `json:"error"`
 	// CheckerData is a free-form data specific to the checker
-	CheckerData []byte `json:"checkerData"`
+	CheckerData interface{} `json:"checkerData"`
 	// Severity is the severity of the probe
 	Severity ProbeSeverity `json:"severity"`
 }
@@ -52,8 +52,19 @@ type FinalProbe struct {
 	// Status is the result of the probe
 	Status ProbeType `json:"status"`
 
+	// Config is the result of check of configuration in ConfigMap.
+	Config SingleFinalProbe `json:"config"`
+
 	// Errors is the probe-specific error message
-	Errors []string `json:"errors"`
+	Errors []SingleFinalProbe `json:"errors"`
+
+	// Oks is the ok response
+	Oks []SingleFinalProbe `json:"oks"`
+}
+
+type SingleFinalProbe struct {
+	Description string      `json:"description"`
+	Data        interface{} `json:"data"`
 }
 
 func (m *Probe) Reset() { *m = Probe{} }
@@ -93,7 +104,7 @@ func (m *Probe) GetError() string {
 	return ""
 }
 
-func (m *Probe) GetCheckerData() []byte {
+func (m *Probe) GetCheckerData() interface{} {
 	if m != nil {
 		return m.CheckerData
 	}

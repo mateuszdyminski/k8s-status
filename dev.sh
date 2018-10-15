@@ -34,6 +34,7 @@ buildDocker() {
 
 pushDocker() {
 	docker push mateuszdyminski/k8s-status:$APP_VERSION
+	docker push mateuszdyminski/k8s-status:latest
 
 	echo "Application pushed to repo mateuszdyminski/k8s-status:$APP_VERSION" 
 }
